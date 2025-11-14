@@ -206,17 +206,17 @@ export class Model {
             case Actions.FLOAT_TAB: {
                 const node = this.idMap.get(action.data.node);
                 if (node instanceof TabNode && !node.isFloating()) {
-                    const parent = node.getParent();
+                    const originalParent = node.getParent();
 
-                    if (parent instanceof TabSetNode) {
-                        const children = parent.getChildren();
+                    if (originalParent instanceof TabSetNode) {
+                        const children = originalParent.getChildren();
                         const currentIndex = children.indexOf(node);
                         const nonFloatingTabs = children.filter((c, i) => i !== currentIndex && !(c as TabNode).isFloating());
 
                         // If there are other non-floating tabs in the tabset, move this tab to a new hidden tabset
                         if (nonFloatingTabs.length > 0) {
                             // Create a new hidden tabset for floating tab
-                            const parentRow = parent.getParent();
+                            const parentRow = originalParent.getParent();
                             if (parentRow instanceof RowNode) {
                                 // Create new tabset with weight 0 (will be hidden)
                                 const newTabset = new TabSetNode(this, {
@@ -227,13 +227,22 @@ export class Model {
                                 this.idMap.set(newTabset.getId(), newTabset);
 
                                 // Remove tab from current tabset and add to new tabset
-                                parent.removeChild(node);
+                                originalParent.removeChild(node);
                                 newTabset.addChild(node);
                                 newTabset.setSelected(0);
 
                                 // Add new tabset next to current one in the row
-                                const parentIndex = parentRow.getChildren().indexOf(parent);
+                                const parentIndex = parentRow.getChildren().indexOf(originalParent);
                                 parentRow.addChild(newTabset, parentIndex + 1);
+
+                                // Select first non-floating tab in original tabset
+                                if (nonFloatingTabs.length > 0) {
+                                    const nextTab = nonFloatingTabs[0];
+                                    const nextIndex = originalParent.getChildren().indexOf(nextTab);
+                                    if (nextIndex !== -1) {
+                                        originalParent.setSelected(nextIndex);
+                                    }
+                                }
                             }
                         }
 
@@ -244,12 +253,7 @@ export class Model {
                         const size = action.data.size || { width: 600, height: 400 };
                         node._setFloatingSize(size);
 
-                        // Select another tab in original tabset if needed
-                        if (nonFloatingTabs.length > 0 && parent.getSelected() === currentIndex) {
-                            const nextTab = nonFloatingTabs[0];
-                            const nextIndex = children.indexOf(nextTab);
-                            parent.setSelected(nextIndex);
-                        }
+                        returnVal = node;
                     }
                 }
                 break;
