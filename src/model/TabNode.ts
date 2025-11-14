@@ -98,6 +98,64 @@ export class TabNode extends Node implements IDraggable {
         return this.extra;
     }
 
+    /**
+     * Returns true if this tab is currently floating (detached from layout but still in same window)
+     */
+    isFloating(): boolean {
+        return this.attributes._floating === true;
+    }
+
+    /**
+     * @internal
+     * Sets the floating state of this tab
+     */
+    _setFloating(floating: boolean) {
+        if (floating) {
+            this.attributes._floating = true;
+        } else {
+            delete this.attributes._floating;
+        }
+        this.fireEvent("floating", {});
+    }
+
+    /**
+     * Returns the floating position if tab is floating
+     */
+    getFloatingPosition(): { x: number; y: number } | undefined {
+        return this.attributes._floatingPosition;
+    }
+
+    /**
+     * @internal
+     * Sets the floating position
+     */
+    _setFloatingPosition(position: { x: number; y: number } | undefined) {
+        if (position) {
+            this.attributes._floatingPosition = position;
+        } else {
+            delete this.attributes._floatingPosition;
+        }
+    }
+
+    /**
+     * Returns the floating size if tab is floating
+     */
+    getFloatingSize(): { width: number; height: number } | undefined {
+        return this.attributes._floatingSize;
+    }
+
+    /**
+     * @internal
+     * Sets the floating size
+     */
+    _setFloatingSize(size: { width: number; height: number } | undefined) {
+        if (size) {
+            this.attributes._floatingSize = size;
+        } else {
+            delete this.attributes._floatingSize;
+        }
+    }
+
     isPoppedOut() {
         return this.getWindowId() !== Model.MAIN_WINDOW_ID;
     }

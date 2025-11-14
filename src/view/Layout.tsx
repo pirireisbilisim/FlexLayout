@@ -20,6 +20,7 @@ import { BorderTab } from "./BorderTab";
 import { BorderTabSet } from "./BorderTabSet";
 import { DragContainer } from "./DragContainer";
 import { PopoutWindow } from "./PopoutWindow";
+import { FloatingTabWindow } from "./FloatingTabWindow";
 import { AsterickIcon, CloseIcon, EdgeIcon, MaximizeIcon, OverflowIcon, PopoutIcon, RestoreIcon } from "./Icons";
 import { Overlay } from "./Overlay";
 import { Row } from "./Row";
@@ -28,6 +29,7 @@ import { copyInlineStyles, enablePointerOnIFrames, isDesktop, isSafari } from ".
 import { LayoutWindow } from "../model/LayoutWindow";
 import { TabButtonStamp } from "./TabButtonStamp";
 import { SizeTracker } from "./SizeTracker";
+import { FloatingTabsContext, FloatingTabsProvider, useFloatingTabs } from "./FloatingTabsContext";
 
 export interface ILayoutProps {
     /** the model for this layout */
@@ -114,7 +116,7 @@ export class Layout extends React.Component<ILayoutProps> {
 
     /**
      * Adds a new tab by dragging an item to the drop location, must be called from within an HTML
-     * drag start handler. You can use the setDragComponent() method to set the drag image before calling this 
+     * drag start handler. You can use the setDragComponent() method to set the drag image before calling this
      * method.
      * @param event the drag start event
      * @param json the json for the new tab node
@@ -161,7 +163,20 @@ export class Layout extends React.Component<ILayoutProps> {
 
     /** @internal */
     render() {
-        return (<LayoutInternal ref={this.selfRef} {...this.props} renderRevision={this.revision++} />)
+        return (
+            <FloatingTabsProvider>
+                <FloatingTabsContext.Consumer>
+                    {(floatingTabsContext) => (
+                        <LayoutInternal
+                            ref={this.selfRef}
+                            {...this.props}
+                            renderRevision={this.revision++}
+                            floatingTabsContext={floatingTabsContext}
+                        />
+                    )}
+                </FloatingTabsContext.Consumer>
+            </FloatingTabsProvider>
+        )
     }
 }
 
@@ -172,6 +187,9 @@ interface ILayoutInternalProps extends ILayoutProps {
     // used only for popout windows:
     windowId?: string;
     mainLayout?: LayoutInternal;
+
+    // floating tabs context
+    floatingTabsContext?: ReturnType<typeof useFloatingTabs>;
 }
 
 /** @internal */
@@ -364,12 +382,14 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
         const reorderedTabs = this.reorderComponents(tabs, this.orderedTabIds);
 
         let floatingWindows = null;
+        let floatingTabs = null;
         let reorderedTabMoveables = null;
         let tabStamps = null;
         let metricElements = null;
 
         if (this.isMainWindow) {
             floatingWindows = this.renderWindows();
+            floatingTabs = this.renderFloatingTabs();
             metricElements = this.renderMetricsElements();
             const tabMoveables = this.renderTabMoveables();
             reorderedTabMoveables = this.reorderComponents(tabMoveables, this.orderedTabMoveableIds);
@@ -396,6 +416,7 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
                 {tabStamps}
                 {this.state.portal}
                 {floatingWindows}
+                {floatingTabs}
             </div>
         );
     }
@@ -558,12 +579,46 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
         return floatingWindows;
     }
 
+    renderFloatingTabs() {
+        const floatingTabs: React.ReactNode[] = [];
+        const ctx = this.props.floatingTabsContext;
+
+        if (!ctx) {
+            return floatingTabs;
+        }
+
+        this.props.model.visitNodes((node) => {
+            if (node instanceof TabNode) {
+                const floatingState = ctx.getFloatingTab(node.getId());
+                if (floatingState && floatingState.isFloating) {
+                    floatingTabs.push(
+                        <FloatingTabWindow
+                            key={node.getId()}
+                            layout={this}
+                            node={node}
+                            factory={this.props.factory}
+                        />
+                    );
+                }
+            }
+        });
+
+        return floatingTabs;
+    }
+
     renderTabMoveables() {
         const tabMoveables = new Map<string, React.ReactNode>();
+        const ctx = this.props.floatingTabsContext;
 
         this.props.model.visitNodes((node) => {
             if (node instanceof TabNode) {
                 const child = node as TabNode;
+
+                // Skip floating tabs, they are rendered separately
+                if (ctx && ctx.isFloating(child.getId())) {
+                    return;
+                }
+
                 const element = this.getMoveableElement(child.getId());
                 child.setMoveableElement(element);
                 const selected = child.isSelected();
@@ -612,9 +667,17 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
 
     renderTabs() {
         const tabs = new Map<string, React.ReactNode>();
+        const ctx = this.props.floatingTabsContext;
+
         this.props.model.visitWindowNodes(this.windowId, (node) => {
             if (node instanceof TabNode) {
                 const child = node as TabNode;
+
+                // Skip floating tabs, they are rendered separately
+                if (ctx && ctx.isFloating(child.getId())) {
+                    return;
+                }
+
                 const selected = child.isSelected();
                 const path = child.getPath();
 
@@ -697,7 +760,7 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
             if (!tabs.has(nodeId)) {
                 // console.log("delete", nodeId);
                 element.remove(); // remove from dom
-                this.moveableElementMap.delete(nodeId); // remove map entry 
+                this.moveableElementMap.delete(nodeId); // remove map entry
             }
         }
     }
@@ -748,15 +811,41 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
     }
 
     doAction(action: Action): Node | undefined {
+        // Handle floating tab actions with context
+        const ctx = this.props.floatingTabsContext;
+        if (ctx && action.type === Actions.FLOAT_TAB) {
+            const tabId = action.data.node;
+            const position = action.data.position || { x: 200, y: 200 };
+            const size = action.data.size || { width: 600, height: 400 };
+            ctx.setFloatingTab(tabId, { isFloating: true, position, size });
+        } else if (ctx && action.type === Actions.UNFLOAT_TAB) {
+            const tabId = action.data.node;
+            ctx.removeFloatingTab(tabId);
+        }
+
+        let result;
         if (this.props.onAction !== undefined) {
             const outcome = this.props.onAction(action);
             if (outcome !== undefined) {
-                return this.props.model.doAction(outcome);
+                result = this.props.model.doAction(outcome);
+            } else {
+                result = undefined;
             }
-            return undefined;
         } else {
-            return this.props.model.doAction(action);
+            result = this.props.model.doAction(action);
         }
+
+        // After unfloat, select the tab to make it active
+        if (action.type === Actions.UNFLOAT_TAB && result instanceof TabNode) {
+            this.props.model.doAction(Actions.selectTab(result.getId()));
+        }
+
+        // Force redraw after float/unfloat to update tabset visibility
+        if (action.type === Actions.FLOAT_TAB || action.type === Actions.UNFLOAT_TAB) {
+            this.redraw("float/unfloat");
+        }
+
+        return result;
     }
 
     updateRect = () => {
@@ -858,6 +947,10 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
 
     getModel() {
         return this.props.model;
+    }
+
+    getFloatingContext() {
+        return this.props.floatingTabsContext;
     }
 
     onCloseWindow = (windowLayout: LayoutWindow) => {
@@ -988,7 +1081,7 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
     public setDragNode = (event: DragEvent, node: Node & IDraggable) => {
         LayoutInternal.dragState = new DragState(this.mainLayout, DragSource.Internal, node, undefined, undefined);
         // Note: can only set (very) limited types on android! so cannot set json
-        // Note: must set text/plain for android to allow drag, 
+        // Note: must set text/plain for android to allow drag,
         //  so just set a simple message indicating its a flexlayout drag (this is not used anywhere else)
         event.dataTransfer!.setData('text/plain', "--flexlayout--");
         event.dataTransfer!.effectAllowed = "copyMove";
@@ -1235,7 +1328,7 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
     // *************************** End Drag Drop *************************************
 }
 declare const __VERSION__: string;
-export const FlexLayoutVersion = __VERSION__;
+export const FlexLayoutVersion = "0.8.17";
 
 export type DragRectRenderCallback = (
     content: React.ReactNode | undefined,
@@ -1265,7 +1358,7 @@ export interface ITabSetRenderValues {
     /** components that will be added at the end of the tabset */
     buttons: React.ReactNode[];
     /** position to insert overflow button within [...stickyButtons, ...buttons]
-     * if left undefined position will be after the sticky buttons (if any) 
+     * if left undefined position will be after the sticky buttons (if any)
      */
     overflowPosition: number | undefined;
 }

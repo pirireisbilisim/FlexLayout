@@ -482,7 +482,7 @@
                 overflow: hidden;
                 background-color: var(--color-border-tab-content);
             }
-            
+
             &_leading {
                 display:flex;
             }
@@ -759,8 +759,86 @@
                 }
             }
         }
+
+/* ======================== Floating Windows =========================== */
+
+    &__floating_window {
+        background-color: var(--color-floating-window-background);
+        border: 1px solid var(--color-floating-window-border);
+        box-shadow: 0 4px 12px var(--color-floating-window-shadow);
+        border-radius: 4px;
+        pointer-events: auto;
+
+        &:focus-within {
+            box-shadow: 0 6px 16px var(--color-floating-window-shadow);
+        }
     }
 
-/* ======================== End of Base Classes =========================== */
+    &__floating_window_header {
+        background-color: var(--color-floating-window-header-background);
+        color: var(--color-floating-window-header);
+        border-bottom: 1px solid var(--color-floating-window-border);
+        border-radius: 4px 4px 0 0;
+        font-family: var(--font-family);
+        font-size: var(--font-size);
+    }
+
+    &__floating_window_title {
+        flex: 1;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &__floating_window_buttons {
+        display: flex;
+        gap: 4px;
+    }
+
+    &__floating_window_button_dock,
+    &__floating_window_button_close {
+        background: none;
+        border: none;
+        color: var(--color-floating-window-header);
+        cursor: pointer;
+        padding: 4px 8px;
+        font-size: 16px;
+        line-height: 1;
+        transition: background-color 0.2s;
+
+        &:hover {
+            background-color: var(--color-toolbar-button-hover);
+            border-radius: 3px;
+        }
+
+        &:active {
+            opacity: 0.7;
+        }
+    }
+
+    &__floating_window_content {
+        background-color: var(--color-floating-window-background);
+        color: var(--color-text);
+    }
+
+    &__floating_window_resize_handle {
+        cursor: nwse-resize;
+
+        &::after {
+            content: '';
+            position: absolute;
+            right: 2px;
+            bottom: 2px;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 0 0 10px 10px;
+            border-color: transparent transparent var(--color-floating-window-border) transparent;
+        }
+    }
 
 }
+}
+
+/* ======================== End of Base Classes =========================== */

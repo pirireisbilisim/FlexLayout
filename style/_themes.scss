@@ -87,6 +87,12 @@
             --size-mini-scroll-indicator: 3px;
 
             --color-toolbar-button-hover: var(--color-3);
+
+            --color-floating-window-background: var(--color-background);
+            --color-floating-window-border: var(--color-4);
+            --color-floating-window-shadow: rgba(0, 0, 0, 0.15);
+            --color-floating-window-header-background: var(--color-2);
+            --color-floating-window-header: var(--color-text);
         }
     }
 }
@@ -185,6 +191,12 @@
             --size-mini-scroll-indicator: 3px;
 
             --color-toolbar-button-hover: var(--color-4);
+
+            --color-floating-window-background: var(--color-background);
+            --color-floating-window-border: var(--color-4);
+            --color-floating-window-shadow: rgba(0, 0, 0, 0.4);
+            --color-floating-window-header-background: var(--color-3);
+            --color-floating-window-header: var(--color-text);
         }
     }
 }
