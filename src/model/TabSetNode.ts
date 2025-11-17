@@ -166,7 +166,9 @@ export class TabSetNode extends Node implements IDraggable, IDropTarget {
     }
 
     isActive() {
-        return this.model.getActiveTabset(this.getWindowId()) === this;
+        const isActive = this.model.getActiveTabset(this.getWindowId()) === this;
+        console.log('TabSetNode isActive check:', this.getId(), 'result:', isActive, 'activeTabset:', this.model.getActiveTabset(this.getWindowId()));
+        return isActive;
     }
 
     isEnableDeleteWhenEmpty() {

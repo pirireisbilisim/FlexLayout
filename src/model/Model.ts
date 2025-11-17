@@ -9,7 +9,7 @@ import { BorderNode } from "./BorderNode";
 import { BorderSet } from "./BorderSet";
 import { IDraggable } from "./IDraggable";
 import { IDropTarget } from "./IDropTarget";
-import { IJsonModel, IJsonPopout, ITabSetAttributes } from "./IJsonModel";
+import { IJsonModel, IJsonPopout, IJsonFloating, ITabSetAttributes } from "./IJsonModel";
 import { Node } from "./Node";
 import { RowNode } from "./RowNode";
 import { TabNode } from "./TabNode";
@@ -47,6 +47,10 @@ export class Model {
     private windows: Map<string, LayoutWindow>;
     /** @internal */
     private rootWindow: LayoutWindow;
+    /** @internal */
+    private floatings: Map<string, IJsonFloating>;
+    /** @internal */
+    private floatingNodes: Map<string, TabNode>;
 
     /**
      * 'private' constructor. Use the static method Model.fromJson(json) to create a model
@@ -59,6 +63,8 @@ export class Model {
         this.windows = new Map<string, LayoutWindow>();
         this.rootWindow = new LayoutWindow(Model.MAIN_WINDOW_ID, Rect.empty());
         this.windows.set(Model.MAIN_WINDOW_ID, this.rootWindow);
+        this.floatings = new Map<string, IJsonFloating>();
+        this.floatingNodes = new Map<string, TabNode>();
         this.changeListeners = [];
     }
 
@@ -205,93 +211,108 @@ export class Model {
             }
             case Actions.FLOAT_TAB: {
                 const node = this.idMap.get(action.data.node);
-                if (node instanceof TabNode && !node.isFloating()) {
-                    const originalParent = node.getParent();
+                if (node instanceof TabNode) {
+                    let rect = Rect.empty();
 
-                    if (originalParent instanceof TabSetNode) {
-                        const children = originalParent.getChildren();
-                        const currentIndex = children.indexOf(node);
-                        const nonFloatingTabs = children.filter((c, i) => i !== currentIndex && !(c as TabNode).isFloating());
+                    // Use saved position and size if available
+                    const savedX = node.getX();
+                    const savedY = node.getY();
+                    const savedWidth = node.getFloatingWidth();
+                    const savedHeight = node.getFloatingHeight();
 
-                        // If there are other non-floating tabs in the tabset, move this tab to a new hidden tabset
-                        if (nonFloatingTabs.length > 0) {
-                            // Create a new hidden tabset for floating tab
-                            const parentRow = originalParent.getParent();
-                            if (parentRow instanceof RowNode) {
-                                // Create new tabset with weight 0 (will be hidden)
-                                const newTabset = new TabSetNode(this, {
-                                    type: "tabset",
-                                    enableDeleteWhenEmpty: true,
-                                    weight: 0
-                                });
-                                this.idMap.set(newTabset.getId(), newTabset);
-
-                                // Remove tab from current tabset and add to new tabset
-                                originalParent.removeChild(node);
-                                newTabset.addChild(node);
-                                newTabset.setSelected(0);
-
-                                // Add new tabset next to current one in the row
-                                const parentIndex = parentRow.getChildren().indexOf(originalParent);
-                                parentRow.addChild(newTabset, parentIndex + 1);
-
-                                // Select first non-floating tab in original tabset
-                                if (nonFloatingTabs.length > 0) {
-                                    const nextTab = nonFloatingTabs[0];
-                                    const nextIndex = originalParent.getChildren().indexOf(nextTab);
-                                    if (nextIndex !== -1) {
-                                        originalParent.setSelected(nextIndex);
-                                    }
-                                }
-                            }
+                    if (savedX !== undefined && savedY !== undefined) {
+                        // Use saved position and size from previous float
+                        const width = savedWidth !== undefined ? savedWidth : 300;
+                        const height = savedHeight !== undefined ? savedHeight : 300;
+                        rect = new Rect(savedX, savedY, width, height);
+                    } else {
+                        // First time float - use 300x300 size and get position from parent
+                        let x = 100;
+                        let y = 100;
+                        if (node.getParent() instanceof TabSetNode) {
+                            const parentRect = node.getParent()!.getRect();
+                            x = parentRect.x;
+                            y = parentRect.y;
+                        } else if (node.getParent() instanceof BorderNode) {
+                            const parentRect = (node.getParent() as BorderNode).getContentRect();
+                            x = parentRect.x;
+                            y = parentRect.y;
                         }
-
-                        // Set floating state
-                        node._setFloating(true);
-                        const position = action.data.position || { x: 200, y: 200 };
-                        node._setFloatingPosition(position);
-                        const size = action.data.size || { width: 600, height: 400 };
-                        node._setFloatingSize(size);
-
-                        returnVal = node;
+                        rect = new Rect(x, y, 300, 300);
                     }
+
+                    const parent = node.getParent();
+                    let originalParentId = "";
+                    let originalIndex = -1;
+
+                    if (parent) {
+                        originalParentId = parent.getId();
+                        originalIndex = parent.getChildren().indexOf(node);
+                        if (parent instanceof TabSetNode || parent instanceof BorderNode) {
+                            parent.remove(node);
+                        }
+                        (node as any).parent = null;
+                    }
+
+                    const floatingId = randomUUID();
+                    const floating: IJsonFloating = {
+                        tabId: node.getId(),
+                        rect: rect.toJson(),
+                        zIndex: this.getNextZIndex(),
+                        originalParentId,
+                        originalIndex,
+                        isActive: false
+                    };
+
+                    this.floatings.set(floatingId, floating);
+                    this.floatingNodes.set(node.getId(), node);
                 }
                 break;
             }
             case Actions.UNFLOAT_TAB: {
-                const node = this.idMap.get(action.data.node);
-                if (node instanceof TabNode) {
-                    // Get parent before clearing floating state
-                    const parent = node.getParent();
+                const floatingId = action.data.floatingId;
+                const floating = this.floatings.get(floatingId);
+                if (floating) {
+                    const tabNode = this.idMap.get(floating.tabId);
+                    if (tabNode instanceof TabNode) {
+                        // Save current floating position and size to tab for next float
+                        tabNode.setX(floating.rect.x);
+                        tabNode.setY(floating.rect.y);
+                        tabNode.setFloatingWidth(floating.rect.width);
+                        tabNode.setFloatingHeight(floating.rect.height);
 
-                    // Clear floating state
-                    node._setFloating(false);
-                    node._setFloatingPosition(undefined as any);
-                    node._setFloatingSize(undefined as any);
+                        // Remove from floating
+                        this.floatings.delete(floatingId);
+                        this.floatingNodes.delete(floating.tabId);
 
-                    // If toNode specified, move tab there
-                    if (action.data.toNode) {
-                        const toNode = this.idMap.get(action.data.toNode);
-                        if (toNode instanceof TabSetNode) {
-                            const location = action.data.location ? DockLocation.getByName(action.data.location) : DockLocation.CENTER;
-                            const index = action.data.index !== undefined ? action.data.index : -1;
-                            toNode.drop(node, location, index, true);
-                        }
-                    } else {
-                        // Select the tab in its current tabset (stays in floating tabset)
-                        if (parent) {
-                            const children = parent.getChildren();
-                            const index = children.indexOf(node);
-                            if (index !== -1) {
-                                parent.setSelected(index);
-                                // Also set this tabset as active
-                                const windowId = action.data.windowId ? action.data.windowId : Model.MAIN_WINDOW_ID;
-                                const window = this.windows.get(windowId)!;
-                                window.activeTabSet = parent;
+                        // Get original parent
+                        const originalParent = this.idMap.get(floating.originalParentId);
+
+                        if (originalParent && 'children' in originalParent && Array.isArray((originalParent as any).children)) {
+                            // Add back to original parent at original position
+                            const children = (originalParent as any).children;
+                            const insertIndex = Math.min(floating.originalIndex, children.length);
+                            children.splice(insertIndex, 0, tabNode);
+                            (tabNode as any).parent = originalParent;
+
+                            // Select the restored tab
+                            if (typeof (originalParent as any).setSelected === 'function') {
+                                (originalParent as any).setSelected(insertIndex);
+                            }
+                        } else {
+                            // Fallback: add to first available tabset
+                            const firstTabSet = this.getFirstTabSet();
+                            if (firstTabSet && 'children' in firstTabSet) {
+                                const children = (firstTabSet as any).children;
+                                children.push(tabNode);
+                                (tabNode as any).parent = firstTabSet;
+
+                                if (typeof (firstTabSet as any).setSelected === 'function') {
+                                    (firstTabSet as any).setSelected(children.length - 1);
+                                }
                             }
                         }
                     }
-                    returnVal = node;
                 }
                 break;
             }
@@ -307,20 +328,51 @@ export class Model {
                 const windowId = action.data.windowId ? action.data.windowId : Model.MAIN_WINDOW_ID;
                 const window = this.windows.get(windowId)!;
                 if (tabNode instanceof TabNode) {
-                    const parent = tabNode.getParent() as Node;
-                    const pos = parent.getChildren().indexOf(tabNode);
+                    console.log('SELECT_TAB action, tabNode ID:', tabNode.getId(), 'isFloating:', this.floatingNodes.has(tabNode.getId()));
+                    // Check if it is a floating tab
+                    if(this.floatingNodes.has(tabNode.getId())){
+                        console.log('Setting floating tab as active');
+                        // Deactivate all floating tabs first, create new objects to trigger React re-render
+                        for (const [floatingId, floating] of this.floatings) {
+                            this.floatings.set(floatingId, { ...floating, isActive: false });
+                        }
 
-                    if (parent instanceof BorderNode) {
-                        if (parent.getSelected() === pos) {
-                            parent.setSelected(-1);
-                        } else {
-                            parent.setSelected(pos);
+                        // Activate the selected floating tab
+                        for (const [floatingId, floating] of this.floatings) {
+                            if (floating.tabId === tabNode.getId()) {
+                                console.log('Activating floating tab:', floatingId);
+                                this.floatings.set(floatingId, { ...floating, isActive: true });
+                                break;
+                            }
                         }
-                    } else if (parent instanceof TabSetNode) {
-                        if (parent.getSelected() !== pos) {
-                            parent.setSelected(pos);
+
+                        // Clear active tabset since a floating tab is now active
+                        console.log('Clearing activeTabSet, was:', window.activeTabSet);
+                        window.activeTabSet = undefined;
+                        console.log('activeTabSet is now:', window.activeTabSet);
+                    } else {
+                        // Deactivate all floating tabs when a regular tab is selected
+                        for (const [floatingId, floating] of this.floatings) {
+                            this.floatings.set(floatingId, { ...floating, isActive: false });
                         }
-                        window.activeTabSet = parent;
+
+                        const parent = tabNode.getParent() as Node;
+                        if (parent) {
+                            const pos = parent.getChildren().indexOf(tabNode);
+
+                            if (parent instanceof BorderNode) {
+                                if (parent.getSelected() === pos) {
+                                    parent.setSelected(-1);
+                                } else {
+                                    parent.setSelected(pos);
+                                }
+                            } else if (parent instanceof TabSetNode) {
+                                if (parent.getSelected() !== pos) {
+                                    parent.setSelected(pos);
+                                }
+                                window.activeTabSet = parent;
+                            }
+                        }
                     }
                 }
                 break;
@@ -334,6 +386,11 @@ export class Model {
                     const tabsetNode = this.idMap.get(action.data.tabsetNode);
                     if (tabsetNode instanceof TabSetNode) {
                         window.activeTabSet = tabsetNode;
+
+                        // Deactivate all floating tabs when a tabset becomes active
+                        for (const [floatingId, floating] of this.floatings) {
+                            this.floatings.set(floatingId, { ...floating, isActive: false });
+                        }
                     }
                 }
                 break;
@@ -442,6 +499,59 @@ export class Model {
     }
 
     /**
+     * Gets the floatings map
+     * @returns {Map<string, IJsonFloating>}
+     */
+    getFloatingsMap() {
+        return this.floatings;
+    }
+
+    /**
+     * Gets the floating nodes map
+     * @returns {Map<string, TabNode>}
+     */
+    getFloatingNodesMap() {
+        return this.floatingNodes;
+    }
+
+    /**
+     * Adds a floating node to the model (used during sync)
+     * @param tabId
+     * @param tabNode
+     */
+    addFloatingNodeToIdMap(tabId: string, tabNode: TabNode) {
+        if (!this.idMap.has(tabId)) {
+            this.idMap.set(tabId, tabNode);
+        }
+    }
+
+    /**
+     * Removes a floating tab by id
+     * @param floatingId
+     */
+    removeFloating(floatingId: string) {
+        const floating = this.floatings.get(floatingId);
+        if (floating) {
+            this.floatingNodes.delete(floating.tabId);
+            this.floatings.delete(floatingId);
+        }
+    }
+
+    /**
+     * Gets the next z-index for floating tabs
+     * @returns {number}
+     */
+    getNextZIndex(): number {
+        let maxZ = 1000;
+        for (const floating of this.floatings.values()) {
+            if (floating.zIndex > maxZ) {
+                maxZ = floating.zIndex;
+            }
+        }
+        return maxZ + 1;
+    }
+
+    /**
      * Visits all the nodes in the model and calls the given function for each
      * @param fn a function that takes visited node and a integer level as parameters
      */
@@ -503,6 +613,24 @@ export class Model {
                 model.windows.set(windowId, layoutWindow);
             }
         }
+        if (json.floatings) {
+            for (const floatingId in json.floatings) {
+                const floatingJson = json.floatings[floatingId];
+                // Create TabNode for floating tab but don't add to tree
+                const tabNode = TabNode.fromJson(floatingJson, model, true);
+                // Set parent to null to mark as floating
+                (tabNode as any).parent = null;
+                // Store the floating reference
+                model.floatings.set(floatingId, {
+                    tabId: tabNode.getId(),
+                    rect: floatingJson.rect,
+                    zIndex: floatingJson.zIndex,
+                    originalParentId: floatingJson.originalParentId || "",
+                    originalIndex: floatingJson.originalIndex || -1,
+                    isActive: floatingJson.isActive || false
+                });
+            }
+        }
 
         model.rootWindow.root = RowNode.fromJson(json.layout, model, model.getwindowsMap().get(Model.MAIN_WINDOW_ID)!);
         model.tidy(); // initial tidy of node tree
@@ -529,11 +657,27 @@ export class Model {
             }
         }
 
+        const floatings: Record<string, any> = {};
+        for (const [id, floating] of this.floatings) {
+            const tabNode = this.idMap.get(floating.tabId);
+            if (tabNode instanceof TabNode) {
+                floatings[id] = {
+                    ...tabNode.toJson(),
+                    rect: floating.rect,
+                    zIndex: floating.zIndex,
+                    originalParentId: floating.originalParentId,
+                    originalIndex: floating.originalIndex,
+                    isActive: floating.isActive || false
+                };
+            }
+        }
+
         return {
             global,
             borders: this.borders.toJson(),
             layout: this.rootWindow.root!.toJson(),
-            popouts: windows
+            popouts: windows,
+            floatings: floatings
         };
     }
 
@@ -643,6 +787,11 @@ export class Model {
             //     node.normalizeWeights();
             // }
         });
+
+        // Also add floating tab nodes to idMap
+        for (const [tabId, tabNode] of this.floatingNodes) {
+            this.idMap.set(tabId, tabNode);
+        }
         // console.log(JSON.stringify(Object.keys(this._idMap)));
     }
 
@@ -745,6 +894,7 @@ export class Model {
         attributeDefinitions.add("tabEnablePopout", false).setType(Attribute.BOOLEAN).setAlias("tabEnableFloat");
         attributeDefinitions.add("tabEnablePopoutIcon", true).setType(Attribute.BOOLEAN);
         attributeDefinitions.add("tabEnablePopoutOverlay", false).setType(Attribute.BOOLEAN);
+        attributeDefinitions.add("tabEnableFloat", false).setType(Attribute.BOOLEAN);
         attributeDefinitions.add("tabEnableDrag", true).setType(Attribute.BOOLEAN);
         attributeDefinitions.add("tabEnableRename", true).setType(Attribute.BOOLEAN);
         attributeDefinitions.add("tabContentClassName", undefined).setType(Attribute.STRING);

@@ -23,7 +23,7 @@ export class Actions {
     static CLOSE_WINDOW = "FlexLayout_CloseWindow";
     static CREATE_WINDOW = "FlexLayout_CreateWindow";
     static FLOAT_TAB = "FlexLayout_FloatTab";
-    static UNFLOAT_TAB = "FlexLayout_UnfloatTab";
+    static UNFLOAT_TAB = "FlexLayout_UnFloatTab";
 
     /**
      * Adds a tab node to the given tabset node
@@ -161,6 +161,24 @@ export class Actions {
     }
 
     /**
+     *
+     * @param nodeId
+     * @returns {Action} the action
+     */
+    static floatTab(nodeId: string): Action {
+        return new Action(Actions.FLOAT_TAB, { node: nodeId });
+    }
+
+    /**
+     * Docks a floating tab back to the layout
+     * @param floatingId the id of the floating tab to dock
+     * @returns {Action} the action
+     */
+    static unfloatTab(floatingId: string): Action {
+        return new Action(Actions.UNFLOAT_TAB, { floatingId });
+    }
+
+    /**
      * Pops out the given tab set node into a new browser window
      * @param nodeId the tab set node to popout
      * @returns 
@@ -182,37 +200,9 @@ export class Actions {
      * Creates a new empty popout window with the given layout
      * @param layout the json layout for the new window
      * @param rect the window rectangle in screen coordinates
-     * @returns
+     * @returns 
      */
     static createWindow(layout: IJsonRowNode, rect: IJsonRect): Action {
         return new Action(Actions.CREATE_WINDOW, { layout, rect});
-    }
-
-    /**
-     * Floats the given tab (makes it a draggable floating window within the same browser window)
-     * @param tabNodeId the id of the tab node to float
-     * @param position optional position {x, y} for the floating tab
-     * @param size optional size {width, height} for the floating tab
-     * @returns {Action} the action
-     */
-    static floatTab(tabNodeId: string, position?: { x: number; y: number }, size?: { width: number; height: number }): Action {
-        return new Action(Actions.FLOAT_TAB, { node: tabNodeId, position, size });
-    }
-
-    /**
-     * Unfloats the given tab (docks it back into the layout)
-     * @param tabNodeId the id of the tab node to unfloat
-     * @param toNodeId optional id of the node to dock to
-     * @param location optional dock location
-     * @param index optional index when docking to center
-     * @returns {Action} the action
-     */
-    static unfloatTab(tabNodeId: string, toNodeId?: string, location?: DockLocation, index?: number): Action {
-        return new Action(Actions.UNFLOAT_TAB, {
-            node: tabNodeId,
-            toNode: toNodeId,
-            location: location?.getName(),
-            index
-        });
     }
 }

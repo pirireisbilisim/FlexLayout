@@ -20,8 +20,8 @@ import { BorderTab } from "./BorderTab";
 import { BorderTabSet } from "./BorderTabSet";
 import { DragContainer } from "./DragContainer";
 import { PopoutWindow } from "./PopoutWindow";
-import { FloatingTabWindow } from "./FloatingTabWindow";
-import { AsterickIcon, CloseIcon, EdgeIcon, MaximizeIcon, OverflowIcon, PopoutIcon, RestoreIcon } from "./Icons";
+import { FloatingTab } from "./FloatingTab";
+import { AsterickIcon, CloseIcon, EdgeIcon, FloatIcon, MaximizeIcon, OverflowIcon, PopoutIcon, RestoreIcon } from "./Icons";
 import { Overlay } from "./Overlay";
 import { Row } from "./Row";
 import { Tab } from "./Tab";
@@ -29,7 +29,6 @@ import { copyInlineStyles, enablePointerOnIFrames, isDesktop, isSafari } from ".
 import { LayoutWindow } from "../model/LayoutWindow";
 import { TabButtonStamp } from "./TabButtonStamp";
 import { SizeTracker } from "./SizeTracker";
-import { FloatingTabsContext, FloatingTabsProvider, useFloatingTabs } from "./FloatingTabsContext";
 
 export interface ILayoutProps {
     /** the model for this layout */
@@ -163,20 +162,7 @@ export class Layout extends React.Component<ILayoutProps> {
 
     /** @internal */
     render() {
-        return (
-            <FloatingTabsProvider>
-                <FloatingTabsContext.Consumer>
-                    {(floatingTabsContext) => (
-                        <LayoutInternal
-                            ref={this.selfRef}
-                            {...this.props}
-                            renderRevision={this.revision++}
-                            floatingTabsContext={floatingTabsContext}
-                        />
-                    )}
-                </FloatingTabsContext.Consumer>
-            </FloatingTabsProvider>
-        )
+        return (<LayoutInternal ref={this.selfRef} {...this.props} renderRevision={this.revision++} />)
     }
 }
 
@@ -187,9 +173,6 @@ interface ILayoutInternalProps extends ILayoutProps {
     // used only for popout windows:
     windowId?: string;
     mainLayout?: LayoutInternal;
-
-    // floating tabs context
-    floatingTabsContext?: ReturnType<typeof useFloatingTabs>;
 }
 
 /** @internal */
@@ -581,44 +564,40 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
 
     renderFloatingTabs() {
         const floatingTabs: React.ReactNode[] = [];
-        const ctx = this.props.floatingTabsContext;
+        const floatings = this.props.model.getFloatingsMap();
 
-        if (!ctx) {
-            return floatingTabs;
-        }
+        for (const [floatingId, floating] of floatings) {
+            const tabFactory = this.props.factory;
+            const tabNode = this.props.model.getNodeById(floating.tabId) as TabNode;
+            if (tabNode) {
+                const component = tabFactory(tabNode);
 
-        this.props.model.visitNodes((node) => {
-            if (node instanceof TabNode) {
-                const floatingState = ctx.getFloatingTab(node.getId());
-                if (floatingState && floatingState.isFloating) {
-                    floatingTabs.push(
-                        <FloatingTabWindow
-                            key={node.getId()}
-                            layout={this}
-                            node={node}
-                            factory={this.props.factory}
-                        />
-                    );
-                }
+                floatingTabs.push(
+                    <FloatingTab
+                        key={floatingId}
+                        floating={floating}
+                        floatingId={floatingId}
+                        layout={this}
+                        tabNode={tabNode}
+                        onCloseFloating={this.onCloseFloating}
+                        onDockFloating={this.onDockFloating}
+                        onUpdateFloating={this.onUpdateFloating}
+                    >
+                        {component}
+                    </FloatingTab>
+                );
             }
-        });
+        }
 
         return floatingTabs;
     }
 
     renderTabMoveables() {
         const tabMoveables = new Map<string, React.ReactNode>();
-        const ctx = this.props.floatingTabsContext;
 
         this.props.model.visitNodes((node) => {
             if (node instanceof TabNode) {
                 const child = node as TabNode;
-
-                // Skip floating tabs, they are rendered separately
-                if (ctx && ctx.isFloating(child.getId())) {
-                    return;
-                }
-
                 const element = this.getMoveableElement(child.getId());
                 child.setMoveableElement(element);
                 const selected = child.isSelected();
@@ -667,17 +646,9 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
 
     renderTabs() {
         const tabs = new Map<string, React.ReactNode>();
-        const ctx = this.props.floatingTabsContext;
-
         this.props.model.visitWindowNodes(this.windowId, (node) => {
             if (node instanceof TabNode) {
                 const child = node as TabNode;
-
-                // Skip floating tabs, they are rendered separately
-                if (ctx && ctx.isFloating(child.getId())) {
-                    return;
-                }
-
                 const selected = child.isSelected();
                 const path = child.getPath();
 
@@ -811,41 +782,15 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
     }
 
     doAction(action: Action): Node | undefined {
-        // Handle floating tab actions with context
-        const ctx = this.props.floatingTabsContext;
-        if (ctx && action.type === Actions.FLOAT_TAB) {
-            const tabId = action.data.node;
-            const position = action.data.position || { x: 200, y: 200 };
-            const size = action.data.size || { width: 600, height: 400 };
-            ctx.setFloatingTab(tabId, { isFloating: true, position, size });
-        } else if (ctx && action.type === Actions.UNFLOAT_TAB) {
-            const tabId = action.data.node;
-            ctx.removeFloatingTab(tabId);
-        }
-
-        let result;
         if (this.props.onAction !== undefined) {
             const outcome = this.props.onAction(action);
             if (outcome !== undefined) {
-                result = this.props.model.doAction(outcome);
-            } else {
-                result = undefined;
+                return this.props.model.doAction(outcome);
             }
+            return undefined;
         } else {
-            result = this.props.model.doAction(action);
+            return this.props.model.doAction(action);
         }
-
-        // After unfloat, select the tab to make it active
-        if (action.type === Actions.UNFLOAT_TAB && result instanceof TabNode) {
-            this.props.model.doAction(Actions.selectTab(result.getId()));
-        }
-
-        // Force redraw after float/unfloat to update tabset visibility
-        if (action.type === Actions.FLOAT_TAB || action.type === Actions.UNFLOAT_TAB) {
-            this.redraw("float/unfloat");
-        }
-
-        return result;
     }
 
     updateRect = () => {
@@ -949,15 +894,67 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
         return this.props.model;
     }
 
-    getFloatingContext() {
-        return this.props.floatingTabsContext;
-    }
-
     onCloseWindow = (windowLayout: LayoutWindow) => {
         this.doAction(Actions.closeWindow(windowLayout.windowId));
     };
 
     onSetWindow = (windowLayout: LayoutWindow, window: Window) => {
+    };
+
+    onCloseFloating = (floatingId: string) => {
+        const floating = this.props.model.getFloatingsMap().get(floatingId);
+        if (floating) {
+            // Delete the tab node which will also clean up the floating reference
+            this.doAction(Actions.deleteTab(floating.tabId));
+            // Also remove from floating map
+            this.props.model.removeFloating(floatingId);
+        }
+    };
+
+    onDockFloating = (floatingId: string, x: number, y: number) => {
+        // Use the action system - this will trigger model change listeners
+        this.doAction(Actions.unfloatTab(floatingId));
+    };
+
+    onUpdateFloating = (floatingId: string, rect: Rect, zIndex: number) => {
+        const floating = this.props.model.getFloatingsMap().get(floatingId);
+        if (floating) {
+            // Only update if values actually changed
+            const rectJson = rect.toJson();
+            if (floating.rect.x !== rectJson.x ||
+                floating.rect.y !== rectJson.y ||
+                floating.rect.width !== rectJson.width ||
+                floating.rect.height !== rectJson.height ||
+                floating.zIndex !== zIndex) {
+                floating.rect = rectJson;
+                floating.zIndex = zIndex;
+                // Force a re-render by updating state
+                this.forceUpdate();
+            }
+        }
+    };
+
+    findDropTargetAtPosition = (x: number, y: number): { nodeId: string; location: DockLocation; index: number } | null => {
+        // Convert screen coordinates to layout coordinates
+        const layoutRect = this.getDomRect();
+        const localX = x - layoutRect.x;
+        const localY = y - layoutRect.y;
+
+        // Find the first tabset as a fallback
+        const firstTabSet = this.props.model.getFirstTabSet();
+        if (firstTabSet) {
+            return {
+                nodeId: firstTabSet.getId(),
+                location: DockLocation.CENTER,
+                index: -1
+            };
+        }
+
+        return null;
+    };
+
+    getDropTargetAtPoint = (x: number, y: number) => {
+        return this.findDropTargetAtPosition(x, y);
     };
 
     getScreenRect(inRect: Rect) {
@@ -1327,7 +1324,7 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
 
     // *************************** End Drag Drop *************************************
 }
-declare const __VERSION__: string;
+declare const __VERSION__: "0.8.17";
 export const FlexLayoutVersion = "0.8.17";
 
 export type DragRectRenderCallback = (
@@ -1376,6 +1373,7 @@ export interface IIcons {
     close?: (React.ReactNode | ((tabNode: TabNode) => React.ReactNode));
     closeTabset?: (React.ReactNode | ((tabSetNode: TabSetNode) => React.ReactNode));
     popout?: (React.ReactNode | ((tabNode: TabNode) => React.ReactNode));
+    float?: (React.ReactNode | ((tabNode: TabNode) => React.ReactNode));
     maximize?: (React.ReactNode | ((tabSetNode: TabSetNode) => React.ReactNode));
     restore?: (React.ReactNode | ((tabSetNode: TabSetNode) => React.ReactNode));
     more?: (React.ReactNode | ((tabSetNode: (TabSetNode | BorderNode), hiddenTabs: { node: TabNode; index: number }[]) => React.ReactNode));
@@ -1387,6 +1385,7 @@ const defaultIcons = {
     close: <CloseIcon />,
     closeTabset: <CloseIcon />,
     popout: <PopoutIcon />,
+    float: <FloatIcon />,
     maximize: <MaximizeIcon />,
     restore: <RestoreIcon />,
     more: <OverflowIcon />,

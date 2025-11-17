@@ -65,9 +65,7 @@ export const TabSet = (props: ITabSetProps) => {
 
     const onOverflowClick = (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
         const callback = layout.getShowOverflowMenu();
-        const items = hiddenTabs
-            .map(h => { return { index: h, node: (node.getChildren()[h] as TabNode) }; })
-            .filter(item => !floatingCtx || !floatingCtx.isFloating(item.node.getId())); // Skip floating tabs
+        const items = hiddenTabs.map(h => { return { index: h, node: (node.getChildren()[h] as TabNode) }; });
         if (callback !== undefined) {
             callback(node, event, items, onOverflowItemSelect);
         } else {
@@ -134,10 +132,7 @@ export const TabSet = (props: ITabSetProps) => {
     };
 
     const onCloseTab = (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
-        const nonFloating = node.getChildren().filter(c => !(c as TabNode).isFloating());
-        if (nonFloating.length > 0) {
-            layout.doAction(Actions.deleteTab(nonFloating[0].getId()));
-        }
+        layout.doAction(Actions.deleteTab(node.getChildren()[0].getId()));
         event.stopPropagation();
     };
 
@@ -145,6 +140,14 @@ export const TabSet = (props: ITabSetProps) => {
         if (selectedTabNode !== undefined) {
             layout.doAction(Actions.popoutTab(selectedTabNode.getId()));
             // layout.doAction(Actions.popoutTabset(node.getId()));
+        }
+        event.stopPropagation();
+    };
+
+    const onFloatTab = (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
+        if (selectedTabNode !== undefined) {
+            console.log('Float button clicked for tab:', selectedTabNode.getId());
+            layout.doAction(Actions.floatTab(selectedTabNode.getId()));
         }
         event.stopPropagation();
     };
@@ -162,39 +165,21 @@ export const TabSet = (props: ITabSetProps) => {
     const path = node.getPath();
 
     const tabs = [];
-    const floatingCtx = layout.getFloatingContext();
-
-    // Filter out floating tabs for UI calculations
-    const nonFloatingChildren = node.getChildren().filter(c => !floatingCtx || !floatingCtx.isFloating(c.getId()));
-
     if (node.isEnableTabStrip()) {
-        // Check if selected tab is floating
-        const selectedIndex = node.getSelected();
-        const selectedChild = selectedIndex >= 0 ? node.getChildren()[selectedIndex] as TabNode : null;
-        const isSelectedFloating = selectedChild && floatingCtx && floatingCtx.isFloating(selectedChild.getId());
-
-        // Render only non-floating tabs
-        for (let i = 0; i < nonFloatingChildren.length; i++) {
-            const child = nonFloatingChildren[i] as TabNode;
-            const originalIndex = node.getChildren().indexOf(child);
-
-            // Tab is selected only if:
-            // 1. This tab's index matches selected index
-            // 2. AND the selected tab is NOT floating
-            const isSelected = (node.getSelected() === originalIndex) && !isSelectedFloating;
+        for (let i = 0; i < node.getChildren().length; i++) {
+            const child = node.getChildren()[i] as TabNode;
+            const isSelected = node.getSelected() === i;
             tabs.push(
                 <TabButton
                     layout={layout}
                     node={child}
-                    path={path + "/tb" + originalIndex}
+                    path={path + "/tb" + i}
                     key={child.getId()}
                     selected={isSelected}
                 />);
-
-            // Add divider only between visible tabs (not after the last one)
-            if (i < nonFloatingChildren.length - 1) {
+            if (i < node.getChildren().length - 1) {
                 tabs.push(
-                    <div key={"divider-" + child.getId()} className={cm(CLASSES.FLEXLAYOUT__TABSET_TAB_DIVIDER)}></div>
+                    <div key={"divider" + i} className={cm(CLASSES.FLEXLAYOUT__TABSET_TAB_DIVIDER)}></div>
                 );
             }
         }
@@ -211,8 +196,8 @@ export const TabSet = (props: ITabSetProps) => {
     stickyButtons = renderState.stickyButtons;
     buttons = renderState.buttons;
 
-    const isTabStretch = node.isEnableSingleTabStretch() && nonFloatingChildren.length === 1;
-    const showClose = (isTabStretch && ((nonFloatingChildren[0] as TabNode).isEnableClose())) || node.isEnableClose();
+    const isTabStretch = node.isEnableSingleTabStretch() && node.getChildren().length === 1;
+    const showClose = (isTabStretch && ((node.getChildren()[0] as TabNode).isEnableClose())) || node.isEnableClose();
 
     if (renderState.overflowPosition === undefined) {
         renderState.overflowPosition = stickyButtons.length;
@@ -239,15 +224,12 @@ export const TabSet = (props: ITabSetProps) => {
             const overflowTitle = layout.i18nName(I18nLabel.Overflow_Menu_Tooltip);
             let overflowContent;
             if (typeof icons.more === "function") {
-                const items = hiddenTabs
-                    .map(h => { return { index: h, node: (node.getChildren()[h] as TabNode) }; })
-                    .filter(item => !floatingCtx || !floatingCtx.isFloating(item.node.getId())); // Skip floating tabs
+                const items = hiddenTabs.map(h => { return { index: h, node: (node.getChildren()[h] as TabNode) }; });
                 overflowContent = icons.more(node, items);
             } else {
-                const nonFloatingHiddenCount = hiddenTabs.filter(h => !floatingCtx || !floatingCtx.isFloating((node.getChildren()[h] as TabNode).getId())).length;
                 overflowContent = (<>
                     {icons.more}
-                    <div className={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_OVERFLOW_COUNT)}>{nonFloatingHiddenCount > 0 ? nonFloatingHiddenCount : ""}</div>
+                    <div className={cm(CLASSES.FLEXLAYOUT__TAB_BUTTON_OVERFLOW_COUNT)}>{hiddenTabs.length > 0 ? hiddenTabs.length : ""}</div>
                 </>);
             }
             buttons.splice(Math.min(renderState.overflowPosition, buttons.length), 0,
@@ -283,6 +265,23 @@ export const TabSet = (props: ITabSetProps) => {
                 onPointerDown={onInterceptPointerDown}
             >
                 {(typeof icons.popout === "function") ? icons.popout(selectedTabNode) : icons.popout}
+            </button>
+        );
+    }
+
+    // Add float button if enabled
+    if (selectedTabNode !== undefined && selectedTabNode.isEnableFloat()) {
+        const floatTitle = "Float Tab";
+        buttons.push(
+            <button
+                key="float"
+                data-layout-path={path + "/button/float"}
+                title={floatTitle}
+                className={cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR_BUTTON) + " " + cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR_BUTTON_FLOAT)}
+                onClick={onFloatTab}
+                onPointerDown={onInterceptPointerDown}
+            >
+                {(typeof icons.float === "function") ? icons.float(selectedTabNode) : icons.float}
             </button>
         );
     }
@@ -363,7 +362,7 @@ export const TabSet = (props: ITabSetProps) => {
     }
 
     if (isTabStretch) {
-        const tabNode = nonFloatingChildren[0] as TabNode;
+        const tabNode = node.getChildren()[0] as TabNode;
         if (tabNode.getTabSetClassName() !== undefined) {
             tabStripClasses += " " + tabNode.getTabSetClassName();
         }
@@ -447,7 +446,7 @@ export const TabSet = (props: ITabSetProps) => {
     }
 
     let emptyTabset: React.ReactNode;
-    if (nonFloatingChildren.length === 0) {
+    if (node.getChildren().length === 0) {
         const placeHolderCallback = layout.getTabSetPlaceHolderCallback();
         if (placeHolderCallback) {
             emptyTabset = placeHolderCallback(node);
@@ -474,21 +473,6 @@ export const TabSet = (props: ITabSetProps) => {
 
     if (node.getModel().getMaximizedTabset(layout.getWindowId()) !== undefined && !node.isMaximized()) {
         style.display = "none";
-    }
-
-    // Hide tabset if all tabs are floating
-    if (nonFloatingChildren.length === 0) {
-        style.display = "none";
-        style.width = 0;
-        style.height = 0;
-        style.minWidth = 0;
-        style.minHeight = 0;
-        style.flexGrow = 0;
-        style.flexShrink = 1;
-        style.flexBasis = 0;
-    }
-    else if(nonFloatingChildren.length >0){
-        style.display = "flex";
     }
 
     // note: tabset container is needed to allow flexbox to size without border/padding/margin

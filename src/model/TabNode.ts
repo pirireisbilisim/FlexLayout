@@ -98,64 +98,6 @@ export class TabNode extends Node implements IDraggable {
         return this.extra;
     }
 
-    /**
-     * Returns true if this tab is currently floating (detached from layout but still in same window)
-     */
-    isFloating(): boolean {
-        return this.attributes._floating === true;
-    }
-
-    /**
-     * @internal
-     * Sets the floating state of this tab
-     */
-    _setFloating(floating: boolean) {
-        if (floating) {
-            this.attributes._floating = true;
-        } else {
-            delete this.attributes._floating;
-        }
-        this.fireEvent("floating", {});
-    }
-
-    /**
-     * Returns the floating position if tab is floating
-     */
-    getFloatingPosition(): { x: number; y: number } | undefined {
-        return this.attributes._floatingPosition;
-    }
-
-    /**
-     * @internal
-     * Sets the floating position
-     */
-    _setFloatingPosition(position: { x: number; y: number } | undefined) {
-        if (position) {
-            this.attributes._floatingPosition = position;
-        } else {
-            delete this.attributes._floatingPosition;
-        }
-    }
-
-    /**
-     * Returns the floating size if tab is floating
-     */
-    getFloatingSize(): { width: number; height: number } | undefined {
-        return this.attributes._floatingSize;
-    }
-
-    /**
-     * @internal
-     * Sets the floating size
-     */
-    _setFloatingSize(size: { width: number; height: number } | undefined) {
-        if (size) {
-            this.attributes._floatingSize = size;
-        } else {
-            delete this.attributes._floatingSize;
-        }
-    }
-
     isPoppedOut() {
         return this.getWindowId() !== Model.MAIN_WINDOW_ID;
     }
@@ -186,6 +128,30 @@ export class TabNode extends Node implements IDraggable {
 
     isEnablePopoutOverlay() {
         return this.getAttr("enablePopoutOverlay") as boolean;
+    }
+
+    isEnableFloat() {
+        return this.getAttr("enableFloat") as boolean;
+    }
+
+    isFloating() {
+        const floatings = this.model.getFloatingsMap();
+        for (const floating of floatings.values()) {
+            if (floating.tabId === this.getId()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    getFloatingId() {
+        const floatings = this.model.getFloatingsMap();
+        for (const [floatingId, floating] of floatings.entries()) {
+            if (floating.tabId === this.getId()) {
+                return floatingId;
+            }
+        }
+        return undefined;
     }
 
     isEnableDrag() {
@@ -359,6 +325,42 @@ export class TabNode extends Node implements IDraggable {
         this.attributes.name = name;
     }
 
+    getX() {
+        return this.getAttr("x") as number | undefined;
+    }
+
+    getY() {
+        return this.getAttr("y") as number | undefined;
+    }
+
+    getFloatingWidth() {
+        return this.getAttr("floatingWidth") as number | undefined;
+    }
+
+    getFloatingHeight() {
+        return this.getAttr("floatingHeight") as number | undefined;
+    }
+
+    /** @internal */
+    setX(x: number | undefined) {
+        this.attributes.x = x;
+    }
+
+    /** @internal */
+    setY(y: number | undefined) {
+        this.attributes.y = y;
+    }
+
+    /** @internal */
+    setFloatingWidth(width: number | undefined) {
+        this.attributes.floatingWidth = width;
+    }
+
+    /** @internal */
+    setFloatingHeight(height: number | undefined) {
+        this.attributes.floatingHeight = height;
+    }
+
     /** @internal */
     delete() {
         (this.parent as TabSetNode | BorderNode).remove(this);
@@ -457,6 +459,9 @@ export class TabNode extends Node implements IDraggable {
             `if this tab will not work correctly in a popout window when the main window is backgrounded (inactive)
             then enabling this option will gray out this tab`
         );
+        attributeDefinitions.addInherited("enableFloat", "tabEnableFloat").setType(Attribute.BOOLEAN).setDescription(
+            `enable floating tab feature`
+        );
 
         attributeDefinitions.addInherited("borderWidth", "tabBorderWidth").setType(Attribute.NUMBER).setDescription(
             `width when added to border, -1 will use border size`
@@ -475,6 +480,19 @@ export class TabNode extends Node implements IDraggable {
         );
         attributeDefinitions.addInherited("maxHeight", "tabMaxHeight").setType(Attribute.NUMBER).setDescription(
             `the max height of this tab`
+        );
+
+        attributeDefinitions.add("x", undefined).setType(Attribute.NUMBER).setDescription(
+            `x position of tab when floating or after dock`
+        );
+        attributeDefinitions.add("y", undefined).setType(Attribute.NUMBER).setDescription(
+            `y position of tab when floating or after dock`
+        );
+        attributeDefinitions.add("floatingWidth", undefined).setType(Attribute.NUMBER).setDescription(
+            `width of tab when floating`
+        );
+        attributeDefinitions.add("floatingHeight", undefined).setType(Attribute.NUMBER).setDescription(
+            `height of tab when floating`
         );
 
         return attributeDefinitions;
