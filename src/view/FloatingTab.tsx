@@ -12,7 +12,6 @@ export interface IFloatingTabProps {
     floatingId: string;
     layout: LayoutInternal;
     tabNode: TabNode;
-    isFloatingTabActive: boolean;
     onCloseFloating: (floatingId: string) => void;
     onDockFloating: (floatingId: string, x: number, y: number) => void;
     onUpdateFloating: (floatingId: string, rect: Rect, zIndex: number) => void;
@@ -20,7 +19,7 @@ export interface IFloatingTabProps {
 
 /** @internal */
 export const FloatingTab = (props: React.PropsWithChildren<IFloatingTabProps>) => {
-    const { floating, floatingId, layout, tabNode, onCloseFloating, onDockFloating, onUpdateFloating, children } = props;
+    const { floating, floatingId, layout, tabNode, onDockFloating, onUpdateFloating, children } = props;
     const [isDragging, setIsDragging] = React.useState(false);
     const [dragOffset, setDragOffset] = React.useState({ x: 0, y: 0 });
 
@@ -109,30 +108,25 @@ export const FloatingTab = (props: React.PropsWithChildren<IFloatingTabProps>) =
         if (isDragging) {
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
-            return () => {
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
+        
         }
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
     }, [isDragging, handleMouseMove, handleMouseUp]);
 
     React.useEffect(() => {
         if (isResizing) {
             document.addEventListener('mousemove', handleResizeMove);
             document.addEventListener('mouseup', handleResizeUp);
-            return () => {
+            
+        }
+        return () => {
                 document.removeEventListener('mousemove', handleResizeMove);
                 document.removeEventListener('mouseup', handleResizeUp);
             };
-        }
     }, [isResizing, handleResizeMove, handleResizeUp]);
-
-    const handleClose = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        e.preventDefault();
-        console.log("Close button clicked!");
-        onCloseFloating(floatingId);
-    };
 
     const handleDock = (e: React.MouseEvent) => {
         e.stopPropagation();

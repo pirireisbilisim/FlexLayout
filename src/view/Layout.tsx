@@ -936,9 +936,6 @@ export class LayoutInternal extends React.Component<ILayoutInternalProps, ILayou
 
     findDropTargetAtPosition = (x: number, y: number): { nodeId: string; location: DockLocation; index: number } | null => {
         // Convert screen coordinates to layout coordinates
-        const layoutRect = this.getDomRect();
-        const localX = x - layoutRect.x;
-        const localY = y - layoutRect.y;
 
         // Find the first tabset as a fallback
         const firstTabSet = this.props.model.getFirstTabSet();
