@@ -165,8 +165,8 @@ export class Actions {
      * @param nodeId
      * @returns {Action} the action
      */
-    static floatTab(nodeId: string): Action {
-        return new Action(Actions.FLOAT_TAB, { node: nodeId });
+    static floatTab(nodeId: string, width?: number, height?: number, x?: number, y?: number): Action {
+        return new Action(Actions.FLOAT_TAB, { node: nodeId, width, height, x, y });
     }
 
     /**

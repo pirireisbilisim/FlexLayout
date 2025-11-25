@@ -220,7 +220,9 @@ export class Model {
                     const savedWidth = node.getFloatingWidth();
                     const savedHeight = node.getFloatingHeight();
 
-                    if (savedX !== undefined && savedY !== undefined) {
+                    if (action.data.width !== undefined && action.data.height !== undefined && action.data.x !== undefined && action.data.y !== undefined) {
+                        rect = new Rect(action.data.x, action.data.y, action.data.width, action.data.height);
+                    } else if (savedX !== undefined && savedY !== undefined) {
                         // Use saved position and size from previous float
                         const width = savedWidth !== undefined ? savedWidth : 300;
                         const height = savedHeight !== undefined ? savedHeight : 300;
