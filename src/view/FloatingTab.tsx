@@ -27,7 +27,13 @@ export const FloatingTab = (props: React.PropsWithChildren<IFloatingTabProps>) =
     const initialWidth = Math.max(floating.rect.width || 600, 400);
     const initialHeight = Math.max(floating.rect.height || 400, 300);
 
-    const [position, setPosition] = React.useState({ x: floating.rect.x, y: floating.rect.y });
+    // Constrain initial position to screen boundaries
+    const maxInitialX = Math.max(0, window.innerWidth - initialWidth);
+    const maxInitialY = Math.max(0, window.innerHeight - initialHeight);
+    const initialX = Math.max(0, Math.min(floating.rect.x, maxInitialX));
+    const initialY = Math.max(0, Math.min(floating.rect.y, maxInitialY));
+
+    const [position, setPosition] = React.useState({ x: initialX, y: initialY });
     const [size, setSize] = React.useState({ width: initialWidth, height: initialHeight });
     const [zIndex, setZIndex] = React.useState(floating.zIndex);
     const [isResizing, setIsResizing] = React.useState(false);
@@ -58,11 +64,19 @@ export const FloatingTab = (props: React.PropsWithChildren<IFloatingTabProps>) =
 
     const handleMouseMove = React.useCallback((e: MouseEvent) => {
         if (isDragging) {
-            const newX = e.clientX - dragOffset.x;
-            const newY = e.clientY - dragOffset.y;
+            let newX = e.clientX - dragOffset.x;
+            let newY = e.clientY - dragOffset.y;
+
+            // Constrain to screen boundaries
+            const maxX = window.innerWidth - size.width;
+            const maxY = window.innerHeight - size.height;
+
+            newX = Math.max(0, Math.min(newX, maxX));
+            newY = Math.max(0, Math.min(newY, maxY));
+
             setPosition({ x: newX, y: newY });
         }
-    }, [isDragging, dragOffset]);
+    }, [isDragging, dragOffset, size]);
 
     const handleMouseUp = React.useCallback((e: MouseEvent) => {
         if (isDragging) {
@@ -89,11 +103,19 @@ export const FloatingTab = (props: React.PropsWithChildren<IFloatingTabProps>) =
         if (isResizing) {
             const deltaX = e.clientX - resizeStartPos.current.x;
             const deltaY = e.clientY - resizeStartPos.current.y;
-            const newWidth = Math.max(200, resizeStartSize.current.width + deltaX);
-            const newHeight = Math.max(100, resizeStartSize.current.height + deltaY);
+            let newWidth = Math.max(200, resizeStartSize.current.width + deltaX);
+            let newHeight = Math.max(100, resizeStartSize.current.height + deltaY);
+
+            // Constrain resize to not exceed screen boundaries
+            const maxWidth = window.innerWidth - position.x;
+            const maxHeight = window.innerHeight - position.y;
+
+            newWidth = Math.min(newWidth, maxWidth);
+            newHeight = Math.min(newHeight, maxHeight);
+
             setSize({ width: newWidth, height: newHeight });
         }
-    }, [isResizing]);
+    }, [isResizing, position]);
 
     const handleResizeUp = React.useCallback(() => {
         if (isResizing) {
@@ -120,13 +142,34 @@ export const FloatingTab = (props: React.PropsWithChildren<IFloatingTabProps>) =
         if (isResizing) {
             document.addEventListener('mousemove', handleResizeMove);
             document.addEventListener('mouseup', handleResizeUp);
-            
+
         }
         return () => {
                 document.removeEventListener('mousemove', handleResizeMove);
                 document.removeEventListener('mouseup', handleResizeUp);
             };
     }, [isResizing, handleResizeMove, handleResizeUp]);
+
+    // Handle window resize to keep floating windows within bounds
+    React.useEffect(() => {
+        const handleWindowResize = () => {
+            setPosition(prev => {
+                const maxX = Math.max(0, window.innerWidth - size.width);
+                const maxY = Math.max(0, window.innerHeight - size.height);
+                return {
+                    x: Math.max(0, Math.min(prev.x, maxX)),
+                    y: Math.max(0, Math.min(prev.y, maxY))
+                };
+            });
+            setSize(prev => ({
+                width: Math.min(prev.width, window.innerWidth),
+                height: Math.min(prev.height, window.innerHeight)
+            }));
+        };
+
+        window.addEventListener('resize', handleWindowResize);
+        return () => window.removeEventListener('resize', handleWindowResize);
+    }, [size.width, size.height]);
 
     const handleDock = (e: React.MouseEvent) => {
         e.stopPropagation();
