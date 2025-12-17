@@ -27,6 +27,13 @@ export const Tab = (props: ITabProps) => {
         const element = node.getMoveableElement()!;
         selfRef.current!.appendChild(element);
         node.setMoveableElement(element);
+        return () => {
+            node.setVisible(false);
+        };
+    }, []);
+
+    React.useLayoutEffect(() => {
+        const element = node.getMoveableElement()!;
 
         const handleScroll = () => {
             node.saveScrollPosition();
@@ -43,8 +50,7 @@ export const Tab = (props: ITabProps) => {
             if (selfRef.current) {
                 selfRef.current.removeEventListener("pointerdown", onPointerDown);
             }
-            //node.setVisible(false);
-        }
+        };
     }, [node]);
 
     React.useEffect(() => {
@@ -81,7 +87,7 @@ export const Tab = (props: ITabProps) => {
             overlay = (<div style={overlayStyle} className={cm(CLASSES.FLEXLAYOUT__TAB_OVERLAY)}></div>)
         }
     } else {
-        style.display = "none";
+        style.visibility = "hidden";
         node.setVisible(false);
     }
 
@@ -90,7 +96,7 @@ export const Tab = (props: ITabProps) => {
             if (parentNode.isMaximized()) {
                 style.zIndex = 10;
             } else {
-                style.display = "none";
+                style.visibility = "hidden";
             }
         }
     }
