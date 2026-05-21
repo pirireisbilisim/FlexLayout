@@ -5,6 +5,7 @@ import { IJsonFloating } from "../model/IJsonModel";
 import { Rect } from "../Rect";
 import { Actions } from "../model/Actions";
 import { TabNode } from "../model/TabNode";
+import { I18nLabel } from "../I18nLabel";
 
 /** @internal */
 export interface IFloatingTabProps {
@@ -245,7 +246,7 @@ export const FloatingTab = (props: React.PropsWithChildren<IFloatingTabProps>) =
                         className={cm(CLASSES.FLEXLAYOUT__TAB_TOOLBAR_BUTTON) + " " + cm(CLASSES.FLEXLAYOUT__FLOATING_TAB_DOCK)}
                         onClick={handleDock}
                         onMouseDown={(e) => e.stopPropagation()}
-                        title="Dock back to layout"
+                        title={layout.i18nName(I18nLabel.Floating_Window_Dock_Window)}
                     >
                         {typeof icons.restore === "function" ? icons.restore(tabNode as any) : icons.restore}
                     </button>

@@ -10,4 +10,5 @@ export enum I18nLabel {
     Overflow_Menu_Tooltip = "Hidden tabs",
     Error_rendering_component = "Error rendering component",
     Error_rendering_component_retry = "Retry",
+    Floating_Window_Dock_Window = "Dock window"
 }

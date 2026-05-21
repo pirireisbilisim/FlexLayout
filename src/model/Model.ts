@@ -72,9 +72,10 @@ export class Model {
      * Update the node tree by performing the given action,
      * Actions should be generated via static methods on the Actions class
      * @param action the action to perform
+     * @param ignoreChangeListeners if true, the change listeners will not be called
      * @returns added Node for Actions.addNode, windowId for createWindow
      */
-    doAction(action: Action): any {
+    doAction(action: Action, ignoreChangeListeners: boolean = false): any {
         let returnVal = undefined;
         // console.log(action);
         switch (action.type) {
@@ -162,7 +163,7 @@ export class Model {
                     let r = Rect.empty();
                     if (node.getParent() instanceof TabSetNode) {
                         r = node.getParent()!.getRect();
-                    } else  {
+                    } else {
                         r = (node.getParent() as BorderNode).getContentRect();
                     }
                     const oldLayoutWindow = this.windows.get(node.getWindowId())!;
@@ -266,8 +267,7 @@ export class Model {
                         isActive: false
                     };
 
-                    this.floatings.set(floatingId, floating);
-                    this.floatingNodes.set(node.getId(), node);
+                    this.registerFloating(floatingId, floating, node);
                 }
                 break;
             }
@@ -332,7 +332,7 @@ export class Model {
                 if (tabNode instanceof TabNode) {
                     console.log('SELECT_TAB action, tabNode ID:', tabNode.getId(), 'isFloating:', this.floatingNodes.has(tabNode.getId()));
                     // Check if it is a floating tab
-                    if(this.floatingNodes.has(tabNode.getId())){
+                    if (this.floatingNodes.has(tabNode.getId())) {
                         console.log('Setting floating tab as active');
                         // Deactivate all floating tabs first, create new objects to trigger React re-render
                         for (const [floatingId, floating] of this.floatings) {
@@ -444,8 +444,10 @@ export class Model {
 
         this.updateIdMap();
 
-        for (const listener of this.changeListeners) {
-            listener(action);
+        if (!ignoreChangeListeners) {
+            for (const listener of this.changeListeners) {
+                listener(action);
+            }
         }
 
         return returnVal;
@@ -498,6 +500,19 @@ export class Model {
 
     getwindowsMap() {
         return this.windows;
+    }
+
+    /**
+     *  @internal
+     */
+    protected registerFloating(floatingId: string, floating: IJsonFloating, floatingNode: TabNode) {
+        this.floatings.set(floatingId, floating);
+
+        /* const floatingTabSetNode = new TabSetNode(this, { type: "tabset", id: floatingId }, false);
+        floatingTabSetNode.addChild(floatingNode);
+        floatingTabSetNode.setSelected(0); */
+
+        this.floatingNodes.set(floatingNode.getId(), floatingNode);
     }
 
     /**
@@ -573,6 +588,29 @@ export class Model {
         }
     }
 
+    visitFloatingNodes(fn: (node: Node, level: number) => void) {
+        for (const [_, floatingNode] of this.floatingNodes) {
+            const tabNode = this.idMap.get(floatingNode.getId());
+            if (tabNode) {
+                fn(tabNode, 0);
+            }
+        }
+    }
+
+    visitPopoutNodes(fn: (node: Node, level: number) => void) {
+        for (const [id] of this.windows) {
+            if (id !== Model.MAIN_WINDOW_ID) {
+                this.visitWindowNodes(id, fn);
+            }
+        }
+    }
+
+    visitAllNodes(fn: (node: Node, level: number) => void) {
+        this.visitNodes(fn);
+        this.visitPopoutNodes(fn);
+        this.visitFloatingNodes(fn);
+    }
+
     /**
      * Gets a node by its id
      * @param id the id to find
@@ -623,14 +661,14 @@ export class Model {
                 // Set parent to null to mark as floating
                 (tabNode as any).parent = null;
                 // Store the floating reference
-                model.floatings.set(floatingId, {
+                model.registerFloating(floatingId, {
                     tabId: tabNode.getId(),
                     rect: floatingJson.rect,
                     zIndex: floatingJson.zIndex,
                     originalParentId: floatingJson.originalParentId || "",
                     originalIndex: floatingJson.originalIndex || -1,
                     isActive: floatingJson.isActive || false
-                });
+                }, tabNode);
             }
         }
 

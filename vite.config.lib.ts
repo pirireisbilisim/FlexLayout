@@ -26,6 +26,9 @@ function bannerPlugin(): PluginOption {
 
 export default defineConfig({
   plugins: [react(), bannerPlugin()],
+  esbuild: {
+    drop: ['console', 'debugger'],
+  },
   build: {
     lib: {
       entry: path.resolve(__dirname, 'src/index.ts'),
